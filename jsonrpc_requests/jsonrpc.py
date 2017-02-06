@@ -39,13 +39,13 @@ class Server(object):
             raise TransportError('Error calling method %r' % method_name, requests_exception)
 
         if response.status_code != requests.codes.ok:
-            raise TransportError(response.status_code)
+            raise TransportError(response.status_code, response)
 
         if not is_notification:
             try:
                 parsed = response.json()
             except ValueError as value_error:
-                raise TransportError('Cannot deserialize response body', value_error)
+                raise TransportError('Cannot deserialize response body', value_error, response)
 
             return self.parse_result(parsed)
 
@@ -53,7 +53,7 @@ class Server(object):
     def parse_result(result):
         """Parse the data returned by the server according to the JSON-RPC spec. Try to be liberal in what we accept."""
         if not isinstance(result, dict):
-            raise ProtocolError('Response is not a dictionary')
+            raise ProtocolError('Response is not a dictionary', result)
         if result.get('error'):
             code = result['error'].get('code', '')
             message = result['error'].get('message', '')
