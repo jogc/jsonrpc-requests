@@ -55,7 +55,7 @@ Pass through requests exceptions
     try:
         server.foo()
     except TransportError as transport_error:
-        print(transport_error.args[1]) # this will hold a `requests.exceptions.RequestException` instance
+        print(transport_error.cause) # this will hold a `requests.exceptions.RequestException` instance
 
 
 Tests
