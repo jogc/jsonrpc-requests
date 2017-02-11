@@ -9,7 +9,7 @@ except ImportError:
 
 setup(
     name='jsonrpc-requests',
-    version='0.3.1',
+    version='0.4.0',
     author='Giuseppe Ciotta',
     author_email='gciotta@gmail.com',
     packages=('jsonrpc_requests',),

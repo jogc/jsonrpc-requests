@@ -14,9 +14,25 @@ class JSONRPCError(Exception):
 class TransportError(JSONRPCError):
     """An error occurred while performing a connection to the server"""
 
+    def __init__(self, message, cause=None, server_response=None):
+        self.message = message
+        self.cause = cause
+        self.server_response = server_response
+
+    def __str__(self):
+        return self.message
+
 
 class ProtocolError(JSONRPCError):
     """An error occurred while dealing with the JSON-RPC protocol"""
+
+    def __init__(self, message, server_data=None, server_response=None):
+        self.message = message
+        self.server_data = server_data  # the deserialized server data
+        self.server_response = server_response
+
+    def __str__(self):
+        return self.message
 
 
 class Server(object):
@@ -36,32 +52,34 @@ class Server(object):
         try:
             response = self.request(data=request_body)
         except requests.RequestException as requests_exception:
-            raise TransportError('Error calling method %r' % method_name, requests_exception)
+            raise TransportError('Error calling method %r' % method_name, cause=requests_exception)
 
         if response.status_code != requests.codes.ok:
-            raise TransportError(response.status_code, response)
+            raise TransportError('Got non-200 response from server, status code: %s' % response.status_code,
+                                 server_response=response)
 
         if not is_notification:
-            try:
-                parsed = response.json()
-            except ValueError as value_error:
-                raise TransportError('Cannot deserialize response body', value_error, response)
-
-            return self.parse_result(parsed)
+            return self.parse_response(response)
 
     @staticmethod
-    def parse_result(result):
+    def parse_response(response):
         """Parse the data returned by the server according to the JSON-RPC spec. Try to be liberal in what we accept."""
-        if not isinstance(result, dict):
-            raise ProtocolError('Response is not a dictionary', result)
-        if result.get('error'):
-            code = result['error'].get('code', '')
-            message = result['error'].get('message', '')
-            raise ProtocolError(code, message, result)
-        elif 'result' not in result:
-            raise ProtocolError('Response without a result field')
+        try:
+            server_data = response.json()
+        except ValueError as value_error:
+            raise ProtocolError('Cannot deserialize response body: %s' % value_error, server_response=response)
+
+        if not isinstance(server_data, dict):
+            raise ProtocolError('Response is not a dictionary', server_response=response, server_data=server_data)
+
+        if server_data.get('error'):
+            code = server_data['error'].get('code', '')
+            message = server_data['error'].get('message', '')
+            raise ProtocolError('Error: %s %s' % (code, message), server_response=response, server_data=server_data)
+        elif 'result' not in server_data:
+            raise ProtocolError('Response without a result field', server_response=response, server_data=server_data)
         else:
-            return result['result']
+            return server_data['result']
 
     @staticmethod
     def dumps(data):

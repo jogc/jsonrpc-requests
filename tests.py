@@ -3,6 +3,7 @@ import random
 import json
 import inspect
 import os
+import sys
 
 import pep8
 import requests
@@ -16,6 +17,7 @@ try:
     from unittest.mock import Mock
 except ImportError:
     from mock import Mock
+
 
 class TestCase(unittest.TestCase):
     def assertSameJSON(self, json1, json2):
@@ -73,28 +75,44 @@ class TestJSONRPCClient(TestCase):
             self.server.serialize('my_method_name', params=('foo', 'bar'), is_notification=True)
         )
 
-    def test_parse_result(self):
-        with self.assertRaisesRegex(ProtocolError, 'Response is not a dictionary'):
-            self.server.parse_result([])
-        with self.assertRaisesRegex(ProtocolError, 'Response without a result field'):
-            self.server.parse_result({})
-        with self.assertRaises(ProtocolError) as protoerror:
-            body = {"jsonrpc": "2.0", "error": {"code": -32601, "message": "Method not found"}, "id": "1"}
-            self.server.parse_result(body)
-        self.assertEqual(protoerror.exception.args[0], -32601)
-        self.assertEqual(protoerror.exception.args[1], 'Method not found')
-
     @responses.activate
-    def test_send_request(self):
+    def test_parse_response(self):
+        class MockResponse(object):
+            def __init__(self, json_data, status_code=200):
+                self.json_data = json_data
+                self.status_code = status_code
+
+            def json(self):
+                return self.json_data
+
         # catch non-json responses
-        with self.assertRaises(TransportError) as transport_error:
+        with self.assertRaises(ProtocolError) as protocol_error:
             responses.add(responses.POST, 'http://mock/xmlrpc', body='not json', content_type='application/json')
             self.server.send_request('my_method', is_notification=False, params=None)
 
-        self.assertEqual(transport_error.exception.args[0], 'Cannot deserialize response body')
-        self.assertIsInstance(transport_error.exception.args[1], ValueError)
+        if sys.version_info > (3, 0):
+            self.assertEqual(protocol_error.exception.message,
+                             """Cannot deserialize response body: Expecting value: line 1 column 1 (char 0)""")
+        else:
+            self.assertEqual(protocol_error.exception.message,
+                             """Cannot deserialize response body: No JSON object could be decoded""")
+
+        self.assertIsInstance(protocol_error.exception.server_response, requests.Response)
         responses.reset()
 
+        with self.assertRaisesRegex(ProtocolError, 'Response is not a dictionary'):
+            self.server.parse_response(MockResponse([]))
+
+        with self.assertRaisesRegex(ProtocolError, 'Response without a result field'):
+            self.server.parse_response(MockResponse({}))
+
+        with self.assertRaises(ProtocolError) as protoerror:
+            body = {"jsonrpc": "2.0", "error": {"code": -32601, "message": "Method not found"}, "id": "1"}
+            self.server.parse_response(MockResponse(body))
+        self.assertEqual(protoerror.exception.message, '''Error: -32601 Method not found''')
+
+    @responses.activate
+    def test_send_request(self):
         # catch non-200 responses
         with self.assertRaisesRegex(TransportError, '404'):
             responses.add(responses.POST, 'http://mock/xmlrpc', body='{}', content_type='application/json', status=404)
@@ -102,13 +120,15 @@ class TestJSONRPCClient(TestCase):
         responses.reset()
 
         # catch requests own exception
-        with self.assertRaisesRegex(TransportError, 'Requests exception'):
+        with self.assertRaisesRegex(TransportError, """Error calling method 'my_method'""") as e:
+            # noinspection PyUnusedLocal
             def callback(request):
                 raise requests.RequestException('Requests exception')
             responses.add_callback(
                 responses.POST, 'http://mock/xmlrpc', content_type='application/json', callback=callback,
             )
             self.server.send_request('my_method', is_notification=False, params=None)
+            self.assertIsInstance(e.cause, requests.RequestException)
         responses.reset()
 
         # a notification
@@ -121,8 +141,8 @@ class TestJSONRPCClient(TestCase):
         with self.assertRaises(TransportError) as transport_error:
             s = Server('http://host-doesnt-exist')
             s.foo()
-        self.assertEqual(transport_error.exception.args[0], "Error calling method 'foo'")
-        self.assertIsInstance(transport_error.exception.args[1], requests.exceptions.RequestException)
+        self.assertEqual(transport_error.exception.message, "Error calling method 'foo'")
+        self.assertIsInstance(transport_error.exception.cause, requests.exceptions.RequestException)
 
     def test_forbid_private_methods(self):
         """Test that we can't call private class methods (those starting with '_')"""
@@ -162,10 +182,10 @@ class TestJSONRPCClient(TestCase):
         """Test that we correctly nest namespaces"""
         def callback(request):
             request_message = json.loads(request.body)
-            if (request_message["params"][0] == request_message["method"]):
-                return (200, {}, u'{"jsonrpc": "2.0", "result": true, "id": 1}')
+            if request_message["params"][0] == request_message["method"]:
+                return 200, {}, u'{"jsonrpc": "2.0", "result": true, "id": 1}'
             else:
-                return (200, {}, u'{"jsonrpc": "2.0", "result": false, "id": 1}')
+                return 200, {}, u'{"jsonrpc": "2.0", "result": false, "id": 1}'
 
         responses.add_callback(
             responses.POST, 'http://mock/xmlrpc', content_type='application/json', callback=callback,
@@ -180,7 +200,7 @@ class TestJSONRPCClient(TestCase):
         def callback1(request):
             request_message = json.loads(request.body)
             self.assertEqual(request_message["params"], [42, 23])
-            return (200, {}, u'{"jsonrpc": "2.0", "result": 19, "id": 1}')
+            return 200, {}, u'{"jsonrpc": "2.0", "result": 19, "id": 1}'
 
         responses.add_callback(
             responses.POST, 'http://mock/xmlrpc',
@@ -194,7 +214,7 @@ class TestJSONRPCClient(TestCase):
         def callback2(request):
             request_message = json.loads(request.body)
             self.assertEqual(request_message["params"], {'y': 23, 'x': 42})
-            return (200, {}, u'{"jsonrpc": "2.0", "result": 19, "id": 1}')
+            return 200, {}, u'{"jsonrpc": "2.0", "result": 19, "id": 1}'
 
         responses.add_callback(
             responses.POST, 'http://mock/xmlrpc',
@@ -208,7 +228,7 @@ class TestJSONRPCClient(TestCase):
         def callback3(request):
             request_message = json.loads(request.body)
             self.assertEqual(request_message["params"], {'foo': 'bar'})
-            return (200, {}, u'{"jsonrpc": "2.0", "result": null}')
+            return 200, {}, u'{"jsonrpc": "2.0", "result": null}'
 
         responses.add_callback(
             responses.POST, 'http://mock/xmlrpc',

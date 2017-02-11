@@ -6,12 +6,12 @@ jsonrpc-requests: a compact JSON-RPC client library backed by `requests  <http:/
 .. image:: https://coveralls.io/repos/gciotta/jsonrpc-requests/badge.svg
     :target: https://coveralls.io/r/gciotta/jsonrpc-requests
 
-This is a compact (~100 SLOC) and simple JSON-RPC client implementation written while debugging a picky server.
+This is a compact and simple JSON-RPC client implementation written while debugging a picky server.
 
 Main Features
 -------------
 
-* Python 2.7, 3.4 & 3.5 compatible
+* Python 2.7, 3.4, 3.5, 3.6 compatible
 * Exposes requests options
 * Supports nested namespaces (eg. `app.users.getUsers()`)
 * 100% test coverage
