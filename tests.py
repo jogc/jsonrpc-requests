@@ -12,7 +12,7 @@ import responses
 from jsonrpc_requests import Server, ProtocolError, TransportError
 
 try:
-    # python 3.3
+    # python >= 3.3
     from unittest.mock import Mock
 except ImportError:
     from mock import Mock
@@ -24,7 +24,7 @@ class TestCase(unittest.TestCase):
 
     def assertRaisesRegex(self, *args, **kwargs):
         if hasattr(super(TestCase, self), 'assertRaisesRegex'):
-            # python 3.3
+            # python >= 3.3
             return super(TestCase, self).assertRaisesRegex(*args, **kwargs)
         else:
             # python 2.7
