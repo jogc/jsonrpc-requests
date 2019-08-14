@@ -61,11 +61,14 @@ class Server(object):
         if not is_notification:
             return self.parse_response(response)
 
-    @staticmethod
-    def parse_response(response):
+    def loads(self, response):
+        """Override this method to customize the json deserialization process (eg. float handling)"""
+        return response.json()
+
+    def parse_response(self, response):
         """Parse the data returned by the server according to the JSON-RPC spec. Try to be liberal in what we accept."""
         try:
-            server_data = response.json()
+            server_data = self.loads(response)
         except ValueError as value_error:
             raise ProtocolError('Cannot deserialize response body: %s' % value_error, server_response=response)
 
